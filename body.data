@@ -1,0 +1,11 @@
+{
+  "query": {
+    "constant_score": {
+      "filter": {
+        "term": {
+          "voip_ip": "120.35.48.189"
+        }
+      }
+    }
+  }
+}

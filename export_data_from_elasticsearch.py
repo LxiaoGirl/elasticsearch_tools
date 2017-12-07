@@ -15,16 +15,19 @@ from lib.command_line import parse_args
 from common.logger import Logger
 from elasticsearch import Elasticsearch
 import json
+import functools
 import os
 import csv
+import random
+import string
+import re
 import warnings
 warnings.filterwarnings("ignore")
-
-DATA_ES_HOST = 'http://192.168.50.253:9200/'
 
 
 # 从es导出数据 存储在中间层
 def export_data_from_elasticsearch(http, index='*',json_body='', size_data=100, from_data=0, limit=10000000):
+    elastic_search_connect = Elasticsearch(http, retry_on_timeout=True, max_retries=3, timeout=3600000)
     try:
         body = json.loads(json_body)
     except Exception as error:
@@ -32,6 +35,8 @@ def export_data_from_elasticsearch(http, index='*',json_body='', size_data=100, 
     if limit < size_data:
         size_data = limit
     Logger.info(u'查询body为 %s' % json.dumps(body))
+    total_number = elastic_search_connect.count(index=index, body=body)
+    Logger.info(u"数据总量为 %d" % int(total_number['count']))
     if not body.has_key('size'):
         body['size'] = size_data
     if not body.has_key('from'):
@@ -39,9 +44,8 @@ def export_data_from_elasticsearch(http, index='*',json_body='', size_data=100, 
     else:
         body['from'] = 0
     data_number = 0
-    elastic_search_connect = Elasticsearch(DATA_ES_HOST, retry_on_timeout=True, max_retries=3, timeout=3600000)
     while True:
-        response = elastic_search_connect.search(index='voip_20171205',body=body)
+        response = elastic_search_connect.search(index=index,body=body)
         if len(response['hits']['hits']) > 0:
             data = response['hits']['hits']
             for _source in data:
@@ -58,11 +62,43 @@ def export_data_from_elasticsearch(http, index='*',json_body='', size_data=100, 
     yield None
 
 
+# 读取body请求包
+def read_request_body():
+    try:
+        return open('body.data', 'r').read()
+    except Exception as error:
+        Logger.error(u"请求文件读取，body请求为空，错误%s。" % error)
+        return ''
+
+
+# 获取文件名
+def get_filename(index):
+    # 文件名替换 windows下不允许字符
+    filename = functools.reduce(lambda r, x: r.replace(x, ''), ['|', '\\', '/', ':', '?', '*', '<', '>', '"'], index)
+    if not filename:
+        filename = 'data_list'
+    return filename
+
+
+# 修改输出文件名
+def rename_to_outfile(source_filename, target_filename):
+    random_string = ''.join(random.sample(string.ascii_letters + string.digits, 8))
+    try:
+        if os.path.exists(target_filename):
+            os.rename(target_filename, "%s.%s.bak" % (random_string, target_filename))
+    except Exception as error:
+        Logger.error(u"文件名修改错误 %s" % error)
+        return False
+    return True
+
+
 # 控制导出流程
 def start_export_process(args):
-    export_filename = 'source_data'
+    args.body = read_request_body()
+    export_filename = get_filename(args.index)
     line_number = 0
     csv_writer = None
+    first_line = True
     with open(export_filename, 'wb') as json_file:
         if args.out == 'csv':
             csv_writer = csv.writer(json_file)
@@ -72,14 +108,27 @@ def start_export_process(args):
                 if args.out == 'json':
                     json_file.write(json.dumps(source_data)+'\n')
                 elif args.out == 'csv':
-                    csv_writer.writerow(tuple(source_data.values()))
+                    if first_line:
+                        first_line = False
+                        csv_writer.writerow(tuple(source_data.keys()))
+                    try:
+                        csv_writer.writerow(tuple(source_data.values()))
+                    except Exception as error:
+                        pass
+                print u"当前导出数据量%s\r" % line_number,
         Logger.info(u"导出数据量%d" % (line_number))
+    out_filename = 'data_list'
     if args.out == 'csv':
-        os.rename(export_filename, "%s.csv" % export_filename)
+        out_filename = "%s.csv" % export_filename
     elif args.out == 'json':
-        os.rename(export_filename, "%s.json" % export_filename)
+        out_filename = "%s.json" % export_filename
+    if rename_to_outfile(export_filename, out_filename):
+        os.rename(export_filename, out_filename)
+        Logger.info(u"文件生成成功 %s" % out_filename)
 
 
 if __name__ == '__main__':
+    Logger.info(u"开始数据导出")
     command_line = parse_args()
     start_export_process(command_line)
+
