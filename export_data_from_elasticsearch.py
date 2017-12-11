@@ -114,7 +114,7 @@ def start_export_process(args):
                     try:
                         csv_writer.writerow(tuple(source_data.values()))
                     except Exception as error:
-                        pass
+                        Logger.error(u"CSV文件写入出错%s" % error)
                 print u"当前导出数据量%s\r" % line_number,
         Logger.info(u"导出数据量%d" % (line_number))
     out_filename = 'data_list'
