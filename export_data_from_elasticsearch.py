@@ -31,6 +31,7 @@ def export_data_from_elasticsearch(http, index='*',json_body='', size_data=100, 
     try:
         body = json.loads(json_body)
     except Exception as error:
+        Logger.error(u"查询请求body出错%s" % error)
         body = {}
     if limit < size_data:
         size_data = limit
@@ -111,6 +112,7 @@ def start_export_process(args):
                     if first_line:
                         first_line = False
                         csv_writer.writerow(tuple(source_data.keys()))
+
                     try:
                         csv_writer.writerow(tuple(source_data.values()))
                     except Exception as error:
